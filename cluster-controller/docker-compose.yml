@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  controller:
+    build: .
+    ports:
+      - "8000:8000"
+      - "50051:50051"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/cluster_db
+      - REDIS_URL=redis://redis:6379/0
+      - CONTROLLER_API_KEY=sk-cluster-controller-secret-key
+      - NODE_ENROLLMENT_SECRET=dev-enrollment-token
+      - LOG_LEVEL=INFO
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cluster_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:

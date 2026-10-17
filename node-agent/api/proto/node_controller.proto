@@ -1,0 +1,198 @@
+syntax = "proto3";
+
+package node_controller.v1;
+
+option go_package = "github.com/distributed-ai/node-agent/api/proto/v1;protov1";
+
+service NodeControllerService {
+  rpc EnrollNode(EnrollmentRequest) returns (EnrollmentResponse);
+  rpc RegisterNode(RegistrationRequest) returns (RegistrationResponse);
+  rpc SendHeartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc SendTelemetry(TelemetryRequest) returns (TelemetryResponse);
+  rpc StreamControlChannel(stream NodeMessage) returns (stream ControllerMessage);
+}
+
+message EnrollmentRequest {
+  string node_id = 1;
+  string enrollment_token = 2;
+  string hostname = 3;
+  string agent_version = 4;
+}
+
+message EnrollmentResponse {
+  bool success = 1;
+  string auth_token = 2;
+  string node_secret = 3;
+  string message = 4;
+}
+
+message CPUInfoProto {
+  string model = 1;
+  string vendor = 2;
+  int32 cores = 3;
+  int32 threads = 4;
+  double utilization_percent = 5;
+}
+
+message MemoryInfoProto {
+  uint64 total_bytes = 1;
+  uint64 available_bytes = 2;
+  uint64 used_bytes = 3;
+  double utilization_percent = 4;
+}
+
+message GPUInfoProto {
+  string vendor = 1;
+  string name = 2;
+  uint64 vram_total_bytes = 3;
+  uint64 vram_used_bytes = 4;
+  uint64 vram_available_bytes = 5;
+  double utilization_percent = 6;
+  uint32 temperature_c = 7;
+  double power_usage_watts = 8;
+  string driver_version = 9;
+  string compute_capability = 10;
+}
+
+message StorageInfoProto {
+  uint64 total_bytes = 1;
+  uint64 available_bytes = 2;
+  uint64 used_bytes = 3;
+  double used_percent = 4;
+}
+
+message NetworkInterfaceProto {
+  string name = 1;
+  repeated string ips = 2;
+  string mac = 3;
+  bool is_wired = 4;
+  uint64 estimated_bandwidth_bps = 5;
+}
+
+message NetworkInfoProto {
+  repeated NetworkInterfaceProto interfaces = 1;
+  uint64 estimated_bandwidth = 2;
+}
+
+message RegistrationRequest {
+  string node_id = 1;
+  string auth_token = 2;
+  string hostname = 3;
+  string os = 4;
+  string os_version = 5;
+  string architecture = 6;
+  CPUInfoProto cpu = 7;
+  MemoryInfoProto memory = 8;
+  repeated GPUInfoProto gpus = 9;
+  StorageInfoProto storage = 10;
+  NetworkInfoProto network = 11;
+  string agent_version = 12;
+  repeated string runtime_capabilities = 13;
+  string protocol_version = 14;
+}
+
+message RegistrationResponse {
+  bool registered = 1;
+  string cluster_node_id = 2;
+  int32 heartbeat_interval_seconds = 3;
+  int32 telemetry_interval_seconds = 4;
+  string message = 5;
+}
+
+message HeartbeatRequest {
+  string node_id = 1;
+  string auth_token = 2;
+  int64 timestamp = 3;
+  int64 uptime_seconds = 4;
+  string state = 5;
+  repeated string active_job_ids = 6;
+  double cpu_utilization = 7;
+  double ram_utilization = 8;
+  double gpu_utilization = 9;
+  double vram_utilization = 10;
+  uint32 gpu_temperature = 11;
+  string agent_version = 12;
+}
+
+message HeartbeatResponse {
+  bool acknowledged = 1;
+  string desired_state = 2; // e.g. DRAIN, READY, RE_REGISTER
+  string message = 3;
+}
+
+message TelemetryRequest {
+  string node_id = 1;
+  string auth_token = 2;
+  int64 timestamp = 3;
+  CPUInfoProto cpu = 4;
+  MemoryInfoProto memory = 5;
+  repeated GPUInfoProto gpus = 6;
+  StorageInfoProto storage = 7;
+  int32 active_jobs = 8;
+  int32 queued_jobs = 9;
+  int64 uptime_seconds = 10;
+}
+
+message TelemetryResponse {
+  bool received = 1;
+}
+
+message JobAssignment {
+  string job_id = 1;
+  string job_type = 2; // INFERENCE, DOWNLOAD_MODEL, HEALTH_CHECK
+  string model_id = 3;
+  string execution_id = 4;
+  string partition_id = 5;
+  string payload = 6;
+  int64 deadline_unix = 7;
+  int32 priority = 8;
+  uint64 required_vram_bytes = 9;
+  uint64 required_ram_bytes = 10;
+}
+
+message JobCancel {
+  string job_id = 1;
+  string reason = 2;
+}
+
+message ModelCommand {
+  string command_type = 1; // DOWNLOAD, VERIFY, PREPARE, UNLOAD, DELETE
+  string model_id = 2;
+  string download_url = 3;
+  string expected_sha256 = 4;
+  uint64 expected_size_bytes = 5;
+}
+
+message DrainCommand {
+  string reason = 1;
+  bool force = 2;
+}
+
+message ControllerMessage {
+  string message_id = 1;
+  oneof payload {
+    JobAssignment job_assignment = 2;
+    JobCancel job_cancel = 3;
+    ModelCommand model_command = 4;
+    DrainCommand drain_command = 5;
+  }
+}
+
+message JobProgressUpdate {
+  string job_id = 1;
+  string execution_id = 2;
+  string status = 3; // RUNNING, COMPLETED, FAILED, CANCELLED
+  string output_chunk = 4;
+  int32 tokens_generated = 5;
+  string error_message = 6;
+}
+
+message NodeMessage {
+  string node_id = 1;
+  string message_id = 2;
+  oneof payload {
+    JobProgressUpdate job_progress = 3;
+    string drain_acknowledged = 4;
+    string error_report = 5;
+  }
+}

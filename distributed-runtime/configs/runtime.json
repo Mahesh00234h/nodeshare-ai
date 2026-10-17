@@ -1,0 +1,17 @@
+{
+  "runtime_id": "distributed-runtime-v1",
+  "engine": "llama.cpp",
+  "rpc_port": 50052,
+  "bind_host": "0.0.0.0",
+  "cache_directory": "C:\\ProgramData\\DistributedAI\\models",
+  "allowed_lan_cidrs": [
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "127.0.0.0/8"
+  ],
+  "max_context_length": 4096,
+  "default_batch_size": 512,
+  "enable_cuda": true,
+  "enable_layer_split": true
+}

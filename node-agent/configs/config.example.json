@@ -1,0 +1,15 @@
+{
+  "controller_url": "localhost:50051",
+  "enrollment_token": "dev-enrollment-token-xyz",
+  "node_data_dir": "C:\\ProgramData\\DistributedAI",
+  "model_dir": "C:\\ProgramData\\DistributedAI\\models",
+  "log_dir": "C:\\ProgramData\\DistributedAI\\logs",
+  "telemetry_interval_seconds": 5,
+  "heartbeat_interval_seconds": 5,
+  "max_concurrent_tasks": 4,
+  "log_level": "INFO",
+  "local_api_port": 9090,
+  "max_gpu_temp_c": 85.0,
+  "max_ram_usage_percent": 95.0,
+  "min_free_disk_gb": 2.0
+}
