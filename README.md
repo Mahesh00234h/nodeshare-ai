@@ -1,254 +1,97 @@
-# Distributed AI Inference Cluster & Decentralized Compute Engine
+# NodeShare AI 🚀
+### Distributed AI Inference Across Your Own Computers
 
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](cluster-controller/)
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg)](node-agent/)
-[![gRPC](https://img.shields.io/badge/gRPC-v1.60-green.svg)](cluster-controller/proto/)
-[![OpenAI API](https://img.shields.io/badge/OpenAI_API-Compatible-412991.svg)](API_REFERENCE.md)
+**NodeShare AI** is an experimental distributed AI compute platform designed to connect heterogeneous personal computers through a central controller and persistent node agents. The goal is to make locally available compute resources usable through a unified, OpenAI-compatible inference API.
 
-A high-performance, fault-tolerant, decentralized AI compute cluster designed to orchestrate and execute **large language model (LLM) inference across multi-GPU physical nodes**. By utilizing dynamic model layer-splitting over local Ethernet (via native `llama.cpp` RPC) alongside a central control plane, this architecture transforms heterogeneous consumer and enterprise hardware into a unified, OpenAI-compatible AI inference cluster.
+Instead of treating every computer as an isolated AI workstation, NodeShare AI explores capability-aware scheduling, node health monitoring, hardware-aware placement, and remote inference across a distributed network.
 
----
+🌐 **Project website:** [nodeagent-five.vercel.app](https://nodeagent-five.vercel.app/)
+🌍 **Planned custom domain:** [nodeagent.tech](https://nodeagent.tech/)
+🧠 **Cluster controller:** [llm-cluster.onrender.com](https://llm-cluster.onrender.com/)
+💻 **Source code:** [GitHub Repository](https://github.com/Mahesh00234h/nodeshare-ai)
 
-## Table of Contents
-
-- [System Architecture](#system-architecture)
-- [Key Features](#key-features)
-- [Repository Structure](#repository-structure)
-- [Subsystem Overview](#subsystem-overview)
-  - [1. Cluster Controller (`cluster-controller/`)](#1-cluster-controller-cluster-controller)
-  - [2. Node Agent (`node-agent/`)](#2-node-agent-node-agent)
-  - [3. Distributed Inference Runtime (`distributed-runtime/`)](#3-distributed-inference-runtime-distributed-runtime)
-- [Execution Lifecycle & Sequence Flow](#execution-lifecycle--sequence-flow)
-- [Distributed Execution Modes](#distributed-execution-modes)
-- [Protocol & API Specifications](#protocol--api-specifications)
-  - [OpenAI-Compatible REST API](#openai-compatible-rest-api)
-  - [gRPC Control & Telemetry Protocol](#grpc-control--telemetry-protocol)
-- [Database Schema](#database-schema)
-- [Quick Start & Setup Guide](#quick-start--setup-guide)
-  - [1. Cluster Controller Setup](#1-cluster-controller-setup)
-  - [2. Compute Node Agent Setup](#2-compute-node-agent-setup)
-  - [3. Distributed Runtime Setup](#3-distributed-runtime-setup)
-  - [4. Docker Compose Deployment](#4-docker-compose-deployment)
-- [Operations & Troubleshooting](#operations--troubleshooting)
-- [Verification & Testing](#verification--testing)
+> **Project status:** Experimental. The controller, node-agent infrastructure, and API routes are implemented in the repository. Production readiness, live frontend-to-controller integration, and multi-node execution behavior must be verified against the deployed system before being claimed as completed capabilities.
 
 ---
 
-## System Architecture
+## ✨ Why NodeShare AI?
 
-The architecture consists of three decoupled layers: a **Python Central Control Plane** deployed on cloud PaaS/Docker, **Go Compute Node Agents** running as background daemons on physical hardware, and an embedded **Go/C++ Distributed Inference Runtime** wrapping `llama.cpp` for multi-node matrix multiplication over LAN TCP.
+Running AI models locally can require substantial RAM, GPU memory, and compute resources. Many developers already have multiple computers, but coordinating them as an inference infrastructure introduces challenges around scheduling, network communication, node availability, and model execution.
 
-```
-                                  ┌──────────────────────────┐
-                                  │   OpenAI API Clients     │
-                                  │ (LangChain, LlamaIndex)  │
-                                  └─────────────┬────────────┘
-                                                │
-                                    HTTP POST /v1/chat/completions
-                                                │
-                                                ▼
-┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│                              PYTHON CLUSTER CONTROLLER PLANE                                  │
-│                                  (FastAPI + Uvicorn + gRPC)                                  │
-│                                                                                              │
-│   ┌─────────────────────────┐  ┌──────────────────────────┐  ┌─────────────────────────────┐   │
-│   │   OpenAI REST Router    │  │ Heterogeneous Scheduler  │  │  gRPC Bridge & Telemetry    │   │
-│   │   & SSE Token Streamer  │  │  & Device Scorer Engine  │  │   Health Monitoring Worker  │   │
-│   └────────────┬────────────┘  └──────────────┬───────────┘  └──────────────┬──────────────┘   │
-│                │                              │                             │                  │
-│                └──────────────────────────────┼─────────────────────────────┘                  │
-│                                               │                                                │
-│                                   PostgreSQL / SQLite Database                                 │
-└───────────────────────────────────────────────┬──────────────────────────────────────────────┘
-                                                │
-                                    gRPC / gRPC-Web Stream
-                                  (Port 50051 / HTTP Fallback)
-                                                │
-            ┌───────────────────────────────────┴───────────────────────────────────┐
-            │                                                                       │
-            ▼                                                                       ▼
-┌──────────────────────────────────────┐                ┌──────────────────────────────────────┐
-│        PRIMARY COMPUTE NODE 1        │                │         WORKER COMPUTE NODE 2        │
-│                                      │                │                                      │
-│  ┌────────────────────────────────┐  │                │  ┌────────────────────────────────┐  │
-│  │ Go Node Agent (Daemon)         │  │                │  │ Go Node Agent (Daemon)         │  │
-│  │ - Hardware Detection (smi)     │  │                │  │ - Telemetry & State Machine    │  │
-│  │ - Identity & Token Auth        │  │                │  │ - Model Inventory Manager      │  │
-│  └───────────────┬────────────────┘  │                │  └───────────────┬────────────────┘  │
-│                  │                   │                │                  │                   │
-│  ┌───────────────▼────────────────┐  │                │  ┌───────────────▼────────────────┐  │
-│  │ Distributed Runtime            │  │                │  │ Distributed Runtime            │  │
-│  │ - Execution Planner (LayerSplit│  │                │  │ - RPC Worker Supervisor        │  │
-│  │ - llama-cli Process Manager    │  │                │  └───────────────┬────────────────┘  │
-│  └───────────────┬────────────────┘  │                │                  │                   │
-│                  │                   │                │                  │                   │
-│  ┌───────────────▼────────────────┐  │  LAN TCP RPC   │  ┌───────────────▼────────────────┐  │
-│  │ llama-cli (Primary Engine)     ├==╪===============>│ llama-rpc-server              │  │
-│  │ [GPU 0 - Layers 0..16]         │  │  (Port 50052)  │  │ [GPU 1 - Layers 17..32]       │  │
-│  └────────────────────────────────┘  │                │  └────────────────────────────────┘  │
-└──────────────────────────────────────┘                └──────────────────────────────────────┘
-```
+NodeShare AI explores a way to coordinate these resources through a centralized control plane and lightweight agents.
+
+### Key Objectives
+
+- **Distributed compute:** Coordinate multiple participating computers into a shared compute pool.
+- **Hardware-aware scheduling:** Select eligible nodes based on available VRAM/RAM capabilities and resource requirements.
+- **Persistent node agents:** Maintain node identity and communicate with the controller via gRPC or HTTP fallback.
+- **Real-time health monitoring:** Track heartbeats, node status, and resource telemetry.
+- **OpenAI-compatible interface:** Provide a familiar REST API for supported chat-completion requests (`/v1/chat/completions`).
+- **Local inference:** Integrate with runtimes such as `llama.cpp` and GGUF-format models on compute nodes.
+- **Extensible architecture:** Provide a foundation for future scheduling, observability, and inference improvements.
 
 ---
 
-## Key Features
-
-- **Decentralized Compute Pooling:** Combine VRAM and compute capacity across multiple distinct physical PCs over standard local network infrastructure.
-- **Dynamic Tensor Layer-Splitting:** Auto-calculates VRAM headroom and hardware capability scores to partition LLM layers between primary engines and RPC worker nodes.
-- **OpenAI-Compatible Streaming API:** Native `/v1/chat/completions` endpoint supporting Real-time Server-Sent Events (SSE) streaming, `/v1/models`, and `/v1/embeddings`.
-- **Hybrid gRPC & gRPC-Web Fallback:** Resilient node-to-controller communication engineered to work transparently through standard HTTP/2 gRPC or HTTP/1.1 proxies (e.g. Render, Cloudflare).
-- **Proactive Node Health & Telemetry:** Dynamic heartbeat tracking (5s default) with automatic node state transitions (`READY` -> `DEGRADED` -> `OFFLINE`) and failure recovery re-planning.
-- **Strict Security & LAN Verification:** Automatic model SHA256 checksum verification and CIDR IP validation (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) to ensure safe execution across authorized private subnets.
-
----
-
-## Repository Structure
-
-```
-.
-├── cluster-controller/             # Central Control Plane (Python FastAPI + gRPC)
-│   ├── app/                        # Main application codebase
-│   │   ├── api/                    # REST API endpoints & gRPC fallback bridges
-│   │   ├── core/                   # Security, configuration, and app settings
-│   │   ├── database/               # Async SQLAlchemy models, sessions, and engine
-│   │   ├── events/                 # Event bus & real-time pub-sub multiplexers
-│   │   ├── grpc/                   # gRPC servicer implementation & handler rules
-│   │   ├── jobs/                   # Job status manager, token channels, and queues
-│   │   ├── models/                 # SQLAlchemy DB schema models
-│   │   ├── nodes/                  # Node registry & heartbeat tracking
-│   │   ├── scheduler/              # Capacity scorer & heterogeneous execution planner
-│   │   ├── services/               # Execution orchestrator & recovery handlers
-│   │   └── workers/                # Background health & heartbeat sweepers
-│   ├── proto/                      # Protocol Buffer definitions (node_controller.proto)
-│   ├── migrations/                 # Alembic SQL database migrations
-│   ├── tests/                      # pytest test suite (unit, integration, load)
-│   ├── Dockerfile                  # Container definition
-│   └── docker-compose.yml          # Full local development stack (PostgreSQL + Controller)
-│
-├── node-agent/                     # Go Compute Node Agent V1 (Physical PC Daemon)
-│   ├── cmd/                        # Executable binary entry points
-│   │   ├── node-agent/             # Main node agent background daemon
-│   │   ├── installer/              # Service installer for Windows/Linux
-│   │   ├── launcher/               # Detached silent background launcher
-│   │   └── mock-controller/        # Isolated testing mock gRPC server
-│   ├── internal/                   # Core agent modules
-│   │   ├── agent/                  # Agent state machine (CONNECTING, READY, BUSY, etc.)
-│   │   ├── controller/             # gRPC stream handlers, telemetry & job loop
-│   │   ├── hardware/               # CPU, RAM, NVML/CUDA GPU detection
-│   │   ├── identity/               # Persistent UUID identity manager
-│   │   ├── inference/              # Inference engine job wrappers
-│   │   ├── jobs/                   # Local job worker queue & reservations
-│   │   └── security/               # Enrollment token & credential handling
-│   ├── api/                        # Protobuf stubs generated for Go
-│   ├── installer/                  # PowerShell & Bash installation scripts
-│   └── bin/                        # Compiled binaries (`node-agent.exe`, etc.)
-│
-├── distributed-runtime/            # Go/C++ Inference Execution Runtime V1
-│   ├── cmd/                        # Runtime CLI and standalone daemon entry points
-│   │   ├── runtime/                # Runtime engine daemon
-│   │   └── runtime-cli/            # Diagnostics and benchmark CLI
-│   └── pkg/                        # Runtime packages
-│       ├── communication/          # Ethernet interface detection & LAN security guard
-│       ├── execution/              # VRAM budgeting, device scoring, and execution plans
-│       ├── llama/                  # llama-cli & llama-rpc-server process managers
-│       ├── model/                  # GGUF model manifest & SHA256 checksum verifier
-│       ├── recovery/               # Failure classification & re-planning engine
-│       └── runtime/                # Core inference engine lifecycle & state machine
-│
-├── scripts/                        # Utility verification and testing scripts
-├── API_REFERENCE.md                # Complete HTTP REST and Admin API documentation
-├── ARCHITECTURE_AUDIT.md           # System audit report & inventory
-├── CONTROLLER_ARCHITECTURE.md      # Python controller architectural blueprint
-├── CONTROLLER_INTEGRATION_CONTRACT.md # gRPC Protobuf communication contract
-├── DATABASE_SCHEMA.md              # Database schema ERD & column definitions
-├── DEPLOYMENT.md                   # Cloud & Docker deployment guides
-├── EXECUTION_FLOW.md               # Request lifecycle & sequence diagrams
-└── OPERATIONS.md                   # Operator runbooks & troubleshooting guide
-```
-
----
-
-## Subsystem Overview
-
-### 1. Cluster Controller (`cluster-controller/`)
-The central orchestration brain written in Python using FastAPI, Uvicorn, and `grpcio`. It handles:
-- **Node Lifecycle Management:** Tracks available compute nodes, VRAM capacities, OS/CUDA capabilities, and heartbeat health states.
-- **Heterogeneous Scheduler:** Scores nodes based on current VRAM headroom, compute speed (T/s), and network topology to calculate optimal layer allocation (`SINGLE_NODE` vs `LAYER_RPC`).
-- **OpenAI API Protocol Bridge:** Exposes standard `/v1/chat/completions` and converts client requests into internal gRPC control streams, multiplexing generated token streams back to HTTP clients as SSE events.
-
-### 2. Node Agent (`node-agent/`)
-A lightweight Go daemon running on each participating physical machine:
-- **Auto-Discovery & Telemetry:** Continuously queries system hardware (CPU cores, free system RAM, GPU model, VRAM utilization via `nvidia-smi`) and streams state to the controller every 10s.
-- **Identity & Enrollment:** Autonomously authenticates using pre-shared enrollment tokens (`--enrollment-token`) and persists unique cryptographic UUID identifiers to `C:\ProgramData\DistributedAI\node_identity.json`.
-- **Job Orchestration:** Receives execution plan assignments from the controller and controls the local Distributed Runtime engine.
-
-### 3. Distributed Inference Runtime (`distributed-runtime/`)
-The underlying execution engine that wraps C++ `llama.cpp` binaries:
-- **`llama-cli` Manager:** Controls the primary inference process on Node 1, configuring model loading, context size, tensor split ratios (`--tensor-split`), and remote RPC endpoints.
-- **`llama-rpc-server` Supervisor:** Manages worker daemons on auxiliary nodes (listening on port `50052`), enabling remote matrix multiplication offloading over TCP.
-- **Model Integrity & Security:** Enforces SHA256 model verification before invocation and validates that RPC connections remain strictly within private LAN CIDRs.
-
----
-
-## Execution Lifecycle & Sequence Flow
-
-The following sequence illustrates the lifecycle of a distributed inference request across two physical PCs (PC1 as Primary, PC2 as RPC Worker):
+## 🏗️ System Architecture
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor Client as HTTP Client / User
-    participant Controller as Python Cluster Controller
-    participant Agent1 as PC 1 Node Agent (Primary)
-    participant Runtime1 as PC 1 Distributed Runtime
-    participant Llama1 as PC 1 llama-cli (Primary GPU)
-    participant Agent2 as PC 2 Node Agent (Worker)
-    participant Llama2 as PC 2 llama-rpc-server (Port 50052)
+flowchart TD
+    A[Developer or AI Application]
+    B[NodeShare AI Web Interface]
+    C[OpenAI-Compatible API]
+    D[Python Cluster Controller]
+    E[Scheduler and Job Manager]
+    F[Node Agent 1 - Primary]
+    G[Node Agent 2 - Worker]
+    H[Node Agent N]
+    I[Local LLM Runtime - llama.cpp / RPC]
+    J[Model Output Stream]
 
-    Client->>Controller: POST /v1/chat/completions (model="qwen2.5-0.5b", stream=true)
-    Controller->>Controller: Register Job & Select Ready Nodes (PC1 + PC2)
-    Controller->>Agent1: Assign Execution Plan (LAYER_RPC split: 50% / 50%)
-
-    rect rgb(235, 245, 255)
-        note over Agent1,Agent2: Phase 1: Setup & Validation
-        Agent1->>Runtime1: PrepareDistributedExecution(Plan)
-        Runtime1->>Runtime1: Verify Model GGUF Checksum (SHA256)
-        Agent1->>Agent2: Signal RPC Worker Ready Check
-        Agent2->>Llama2: Launch llama-rpc-server -H 0.0.0.0 -p 50052
-        Llama2-->>Agent2: Listening on 192.168.1.50:50052
-        Agent2-->>Agent1: RPC Worker Ready
-    end
-
-    rect rgb(240, 255, 240)
-        note over Runtime1,Llama2: Phase 2: Distributed Matrix Multiplication
-        Runtime1->>Llama1: Launch llama-cli -m model.gguf -p "..." -rpc 192.168.1.50:50052 --tensor-split 0.5,0.5
-        
-        loop Matrix Multiplication over LAN
-            Llama1->>Llama2: Offload Transformer Layers (TCP Port 50052)
-            Llama2-->>Llama1: Return Computed Hidden States
-        end
-    end
-
-    rect rgb(255, 245, 235)
-        note over Llama1,Client: Phase 3: Token Streaming
-        loop Token-by-Token Generation
-            Llama1-->>Runtime1: Output Token
-            Runtime1-->>Agent1: Stream Token Chunk
-            Agent1-->>Controller: gRPC ControlUpstream(TokenChunk)
-            Controller-->>Client: HTTP SSE data: {"choices":[{"delta":{"content":"..."}}]}
-        end
-    end
-
-    Llama1-->>Runtime1: Execution Finished
-    Runtime1-->>Agent1: Status: COMPLETED
-    Agent1-->>Controller: JobStatus (COMPLETED)
-    Controller-->>Client: HTTP SSE data: [DONE]
+    A --> C
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    E --> G
+    E --> H
+    F --> I
+    G --> I
+    H --> I
+    I --> J
+    J --> D
+    D --> C
 ```
+
+### Component Responsibilities
+
+| Component | Technology | Responsibility |
+|---|---|---|
+| **Web Interface** | Vercel-hosted frontend | Project interface and interactive controls |
+| **Cluster Controller** | Python, FastAPI, Uvicorn | API endpoints, node management, and orchestration |
+| **Scheduler & Job Manager** | Python | Node scoring, job creation, and execution planning |
+| **Node Agent** | Go daemon | Node identity, enrollment, heartbeats, and job communication |
+| **Inference Runtime** | `llama.cpp` and GGUF models | Local model execution (`llama-cli` / `llama-rpc-server`) on physical nodes |
+| **Persistent Storage** | PostgreSQL / SQLite | Cluster metadata, registered nodes, models, and job records |
+| **Hosting** | Vercel & Render | Frontend delivery (Vercel) and controller hosting (Render) |
+
+> **Architecture note:** Render hosts the control plane; participating physical PCs form the compute layer that runs local model binaries. Actual request splitting, model parallelism, automatic failover, and combined VRAM must be validated against physical nodes.
 
 ---
 
-## Distributed Execution Modes
+## 🔄 How It Works
+
+1. **Node Enrollment:** A compute node runs the Go node agent (`node-agent.exe`) and establishes its identity with the controller using an enrollment token.
+2. **Hardware Reporting:** The agent reports available hardware capabilities (CPU, RAM, GPU models, VRAM headroom) and relevant telemetry.
+3. **Health Monitoring:** The controller receives heartbeats (5s interval) and tracks node availability (`READY`, `BUSY`, `DEGRADED`, `OFFLINE`).
+4. **Request Submission:** An application submits an inference request to `/v1/chat/completions` using the OpenAI-compatible API.
+5. **Scheduling:** The controller evaluates eligible compute nodes based on required VRAM and capability scores, then selects target nodes for the job.
+6. **Job Dispatch:** The controller assigns the execution plan (`SINGLE_NODE` or `LAYER_RPC`) to target nodes.
+7. **Inference Execution:** The node's local `llama.cpp` engine processes the request and streams generated tokens.
+8. **Response Streaming:** Token chunks travel back through gRPC control streams to the controller and are delivered to the client as Server-Sent Events (SSE).
+
+---
+
+## ⚡ Distributed Execution Modes
 
 Depending on available node resources and model size, the system dynamically selects one of two execution modes:
 
@@ -256,7 +99,7 @@ Depending on available node resources and model size, the system dynamically sel
 [ Mode A: SINGLE_NODE ]
 Primary PC (VRAM >= Required VRAM)
 ┌─────────────────────────────────────────┐
-│ Primary PC (NVIDIA RTX 4090 24GB)        │
+│ Primary PC (NVIDIA RTX 4090 24GB)       │
 │ ┌─────────────────────────────────────┐ │
 │ │ llama-cli                             │ │
 │ │ [Full Model Loaded in Local VRAM]   │ │
@@ -274,22 +117,69 @@ Primary PC + Auxiliary Worker PC over LAN
 └─────────────────────────────────────────┘                    └─────────────────────────────────────────┘
 ```
 
-1. **`SINGLE_NODE` Mode:**
-   - Evaluated when a single available node possesses sufficient VRAM headroom to host the entire model context.
-   - Lowest latency option; no network IPC required for layer compute.
-2. **`LAYER_RPC` Mode:**
-   - Activated when a model exceeds single-GPU capacity or when workload balancing mandates split execution.
-   - Model layers are split across GPUs (e.g. 60% on GPU 0, 40% on GPU 1). Tensors and Key-Value (KV) cache states are synchronized over high-speed local Ethernet via TCP port `50052`.
+---
+
+## 🌐 Deployment and Hosting
+
+NodeShare AI utilizes separate hosting environments for the user-facing interface and the cluster control plane.
+
+### 1. Frontend: Vercel
+
+The project website is available at: **[https://nodeagent-five.vercel.app/](https://nodeagent-five.vercel.app/)**
+
+Vercel serves the web interface independently from the Python controller. This allows the frontend to be updated without altering the cluster backend deployment.
+
+### 2. Backend: Render
+
+The Python cluster controller is deployed at: **[https://llm-cluster.onrender.com](https://llm-cluster.onrender.com)**
+
+Render hosts the HTTP REST API and controller application. Node agents communicate with the controller using gRPC on port `50051` or gRPC-Web HTTP/1.1 fallback.
+
+### 3. Planned Custom Domain: `nodeagent.tech`
+
+| Domain | Intended Purpose | Hosting Target |
+|---|---|---|
+| `nodeagent.tech` | Main website | Vercel |
+| `www.nodeagent.tech` | Main website alias | Vercel |
+| `api.nodeagent.tech` | Cluster controller API | Render |
+
+#### DNS Setup Guide
+
+##### Configure the Website Domain (Vercel)
+1. Open your Vercel project dashboard.
+2. Go to **Settings → Domains**.
+3. Add `nodeagent.tech` and `www.nodeagent.tech`.
+4. Configure the DNS A/CNAME records specified by Vercel at your domain registrar.
+5. Verify domain status and check HTTPS issuance.
+
+##### Configure the API Subdomain (Render)
+1. Open the cluster controller web service in the Render Dashboard.
+2. Navigate to **Settings → Custom Domains**.
+3. Add `api.nodeagent.tech`.
+4. Create a `CNAME` record for `api` pointing to Render's assigned hostname (`llm-cluster.onrender.com`).
+5. Once verified and TLS is active, update the frontend environment setting to `https://api.nodeagent.tech`.
 
 ---
 
-## Protocol & API Specifications
+## 🔌 API Reference
 
-### OpenAI-Compatible REST API
+### Health and Readiness
 
-#### `POST /v1/chat/completions`
-Submit a prompt for inference. Supports SSE token streaming.
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/health` | Basic service health check |
+| GET | `/ready` | Database & storage readiness check |
+| GET | `/version` | Controller protocol and build version |
 
+### OpenAI-Compatible Inference
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/v1/models` | List available GGUF models across active nodes |
+| POST | `/v1/chat/completions` | Submit chat completion prompt (supports SSE streaming) |
+| POST | `/v1/embeddings` | Return text embedding vector responses |
+
+#### Chat Completion Request Example:
 ```bash
 curl -X POST https://llm-cluster.onrender.com/v1/chat/completions \
   -H "Authorization: Bearer dev-secret-key" \
@@ -303,201 +193,127 @@ curl -X POST https://llm-cluster.onrender.com/v1/chat/completions \
   }'
 ```
 
-##### SSE Response Stream:
-```text
-data: {"id":"chatcmpl-9912","object":"chat.completion.chunk","created":1725998400,"model":"qwen2.5-0.5b","choices":[{"index":0,"delta":{"content":"Quantum"},"finish_reason":null}]}
+### Cluster and Node Management
 
-data: {"id":"chatcmpl-9912","object":"chat.completion.chunk","created":1725998401,"model":"qwen2.5-0.5b","choices":[{"index":0,"delta":{"content":" computing uses qubits..."},"finish_reason":"stop"}]}
-
-data: [DONE]
-```
-
-#### `GET /v1/models`
-Returns all GGUF models available across registered active cluster nodes.
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/admin/cluster/health` | Cluster health and resource capacity summary |
+| GET | `/api/admin/nodes` | List registered nodes and statuses |
+| GET | `/api/admin/nodes/{node_id}` | Inspect node hardware & telemetry |
+| POST | `/api/admin/nodes/{node_id}/drain` | Request node draining (maintenance mode) |
 
 ---
 
-### gRPC Control & Telemetry Protocol
+## 📁 Repository Structure
 
-Defined in `cluster-controller/proto/node_controller.proto`:
-
-```protobuf
-syntax = "proto3";
-package node_controller.v1;
-
-service NodeControllerService {
-  rpc EnrollNode (EnrollmentRequest) returns (EnrollmentResponse);
-  rpc RegisterNode (RegistrationRequest) returns (RegistrationResponse);
-  rpc SendHeartbeat (HeartbeatRequest) returns (HeartbeatResponse);
-  rpc SendTelemetry (TelemetryRequest) returns (TelemetryResponse);
-  rpc StreamControl (stream ControlUpstream) returns (stream ControlDownstream);
-}
 ```
-
-- **Enrollment (`EnrollNode`):** Validates secret token, creates node record, and issues permanent UUID.
-- **Heartbeat (`SendHeartbeat`):** Sent every 5 seconds. Missing heartbeats trigger state transition to `NODE_DEGRADED` (15s) and `NODE_OFFLINE` (30s).
-- **Control Stream (`StreamControl`):** Bidirectional gRPC stream used to assign execution plans, receive token chunks, and signal job cancellation.
+.
+├── cluster-controller/             # Central Control Plane (Python FastAPI + gRPC)
+│   ├── app/                        # FastAPI router, scheduler, DB models, gRPC servicer
+│   ├── proto/                      # Protobuf definitions (node_controller.proto)
+│   ├── migrations/                 # Alembic SQL database migrations
+│   ├── tests/                      # pytest test suite
+│   ├── Dockerfile                  # Render deployment container
+│   └── docker-compose.yml          # Local PostgreSQL + Redis setup
+│
+├── node-agent/                     # Go Compute Node Agent V1 (Physical PC Daemon)
+│   ├── cmd/                        # Node Agent CLI & launcher entrypoints
+│   ├── internal/                   # Hardware detection, gRPC client, state machine
+│   ├── api/                        # Protobuf stubs generated for Go
+│   ├── installer/                  # PowerShell & Bash service installers
+│   └── bin/                        # Compiled executables (node-agent.exe, etc.)
+│
+├── distributed-runtime/            # Go/C++ LLM Inference Runtime V1
+│   ├── cmd/                        # Runtime CLI and engine daemon
+│   └── pkg/                        # Process supervisor (llama-cli / llama-rpc-server), planner, LAN guard
+│
+├── scripts/                        # Utility testing and completion scripts
+├── API_REFERENCE.md                # Complete HTTP REST and Admin API specification
+├── ARCHITECTURE_AUDIT.md           # System audit report & inventory
+├── CONTROLLER_ARCHITECTURE.md      # Controller architectural blueprint
+├── CONTROLLER_INTEGRATION_CONTRACT.md # gRPC Protobuf communication contract
+├── DATABASE_SCHEMA.md              # Database schema ERD & column definitions
+├── DEPLOYMENT.md                   # Cloud & Docker deployment guides
+├── EXECUTION_FLOW.md               # Request lifecycle & sequence diagrams
+└── OPERATIONS.md                   # Operator runbooks & troubleshooting guide
+```
 
 ---
 
-## Database Schema
+## 🛠️ Technology Stack
 
-The Cluster Controller manages state persistence using PostgreSQL (or SQLite3 for local development) via SQLAlchemy 2.0 async ORM:
-
-```
-               ┌──────────────────────────┐
-               │          nodes           │
-               └────────────┬─────────────┘
-                            │
-       ┌────────────────────┼────────────────────┐
-       ▼                    ▼                    ▼
-┌──────────────┐    ┌──────────────┐    ┌─────────────────┐
-│  node_gpus   │    │node_telemetry│    │   node_models   │
-└──────────────┘    └──────────────┘    └─────────────────┘
-
-               ┌──────────────────────────┐
-               │          models          │
-               └──────────────────────────┘
-
-               ┌──────────────────────────┐
-               │           jobs           │
-               └────────────┬─────────────┘
-                            │
-                            ▼
-               ┌──────────────────────────┐
-               │        job_events        │
-               └──────────────────────────┘
-```
-
-- **`nodes`**: Tracks node identity, hostnames, IP addresses, OS info, total system RAM, and overall status (`READY`, `BUSY`, `DEGRADED`, `OFFLINE`).
-- **`node_gpus`**: Relational array storing GPU device index, model name, CUDA capability, and dedicated VRAM capacity per node.
-- **`jobs`**: Lifecycle history tracking job states (`QUEUED`, `PLANNING`, `RUNNING`, `COMPLETED`, `FAILED`) and timing metrics.
+- **Central Control Plane:** Python 3.12, FastAPI, Uvicorn, Async SQLAlchemy / Alembic, `grpcio`
+- **Node Agent:** Go 1.22+, `nvidia-smi` CUDA detection, gRPC client / gRPC-Web fallback
+- **Inference Runtime:** C++ `llama.cpp` (`llama-cli` & `llama-rpc-server`), GGUF quantized models
+- **Communication Protocols:** gRPC over HTTP/2 (Port 50051), gRPC-Web HTTP/1.1 fallback, LAN TCP (Port 50052)
+- **Frontend Hosting:** Vercel
+- **Backend Hosting:** Render
+- **Database:** PostgreSQL / SQLite3
 
 ---
 
-## Quick Start & Setup Guide
+## 🚀 Getting Started
 
 ### Prerequisites
-- **Python:** 3.12 or higher
-- **Go:** 1.22 or higher
-- **C++ Runtime / llama.cpp:** Executable binaries (`llama-cli` and `llama-rpc-server`) in system `PATH` or configured binary paths.
-- **GPU Drivers:** NVIDIA CUDA Toolkit 12.+ (for GPU acceleration).
 
----
+- Python 3.12+
+- Go 1.22+
+- C++ `llama.cpp` binaries (`llama-cli` & `llama-rpc-server`)
+- NVIDIA CUDA Toolkit 12.+ (for GPU acceleration)
 
-### 1. Cluster Controller Setup
+### 1. Clone the Repository
 
 ```bash
-# Navigate to cluster controller directory
+git clone https://github.com/Mahesh00234h/nodeshare-ai.git
+cd nodeshare-ai
+```
+
+### 2. Configure & Launch the Controller
+
+```bash
 cd cluster-controller
-
-# Install Python dependencies
 pip install -r requirements.txt
-
-# Run database migrations
-alembic upgrade head
-
-# Start FastAPI Controller & gRPC server locally
+cp .env.example .env
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
-- **REST / OpenAI API:** `http://localhost:8000`
-- **gRPC Server Port:** `localhost:50051`
 
----
-
-### 2. Compute Node Agent Setup
+### 3. Launch a Compute Node Agent
 
 ```powershell
-# Navigate to node agent directory
 cd node-agent
-
-# Build Node Agent binary
 go build -o bin/node-agent.exe cmd/node-agent/main.go
-
-# Execute Agent in foreground mode
 .\bin\node-agent.exe --foreground --controller-url localhost:50051 --enrollment-token dev-enrollment-token
 ```
 
----
+### 4. Verify Inference Execution
 
-### 3. Distributed Runtime Setup
-
-```powershell
-# Navigate to distributed runtime directory
-cd distributed-runtime
-
-# Run test suite to verify system compatibility
-go test -v ./...
-
-# Build runtime CLI tool
-go build -o bin/runtime-cli.exe ./cmd/runtime-cli
-```
-
----
-
-### 4. Docker Compose Deployment
-
-Run the complete local stack (PostgreSQL + Cluster Controller) using Docker Compose:
-
-```bash
-cd cluster-controller
-docker-compose up --build -d
-```
-
----
-
-## Operations & Troubleshooting
-
-### Operational Runbook
-
-#### 1. Checking Active Nodes
-Query administrative endpoint for registered hardware capacity:
-```bash
-curl -H "Authorization: Bearer dev-secret-key" http://localhost:8000/api/admin/nodes
-```
-
-#### 2. Draining a Node for Maintenance
-Gracefully prevent new job scheduling on a specific node:
-```bash
-curl -X POST -H "Authorization: Bearer dev-secret-key" \
-  http://localhost:8000/api/admin/nodes/{node_id}/drain
-```
-
----
-
-### Common Troubleshooting Scenarios
-
-| Symptom | Root Cause | Resolution |
-| :--- | :--- | :--- |
-| **Node status switches to `DEGRADED` or `OFFLINE`** | Heartbeat stream interrupted for $>15\text{s}$ | Verify `node-agent.exe` process status on target PC. Check outbound network connectivity to Controller on port 50051 or 443. |
-| **Job fails with `RPC_WORKER_DISCONNECTED`** | TCP disconnection on LAN port 50052 during execution | Check physical Ethernet cabling between Primary and Worker PCs. Verify `llama-rpc-server` process on Worker PC using `netstat -ano \| findstr 50052`. |
-| **Model Checksum Mismatch Error** | Local GGUF file modified or corrupted | Run SHA256 checksum check on target node model path (`C:\ProgramData\DistributedAI\models\`) against registered model manifest. |
-
----
-
-## Verification & Testing
-
-### Running Integration & Unit Test Suites
-
-#### 1. Controller Pytest Suite
-```bash
-cd cluster-controller
-python -m pytest -v tests/
-```
-
-#### 2. Distributed Runtime Go Test Suite
-```bash
-cd distributed-runtime
-go test -v ./...
-```
-
-#### 3. End-to-End Chat Completion Script
 ```bash
 python scripts/test_chat_completion.py
 ```
 
 ---
 
-## License
+## 🔐 Security Guidelines
+
+- **Environment Isolation:** Do not commit `.env` files, database credentials, or private keys to source control.
+- **Secret Rotation:** Always supply unique high-entropy secrets for `CONTROLLER_API_KEY` and `NODE_ENROLLMENT_SECRET` in production environments.
+- **LAN Isolation:** Node-to-node tensor RPC traffic (Port `50052`) is strictly validated by the `LANSecurityGuard` module to restrict communication to private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`).
+- **Model Checksums:** Verify SHA256 model checksums prior to loading binaries on compute nodes.
+
+---
+
+## 🧪 Testing and Validation Checklist
+
+- [x] Controller health and database readiness (`/health`, `/ready`)
+- [x] Node registration and persistent UUID identity persistence
+- [x] gRPC Heartbeat loop and telemetry updates
+- [x] Distributed runtime unit tests (`go test -v ./...`)
+- [x] Heterogeneous node scheduling (`SINGLE_NODE` vs `LAYER_RPC`)
+- [x] Streaming chat completions with SSE events
+- [x] Node draining and maintenance modes
+
+---
+
+## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
